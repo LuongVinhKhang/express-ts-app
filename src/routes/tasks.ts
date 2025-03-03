@@ -1,9 +1,27 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
 
 const router = Router();
 dotenv.config();
+
+// Middleware function to log request details
+const logRequestDetails = (req: Request, res: Response, next: NextFunction) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+};
+
+// Middleware function to validate request data
+const validateTaskData = (req: Request, res: Response, next: NextFunction) => {
+  const { title, is_completed } = req.body;
+  if (title == null || typeof title !== 'string' || title.trim() === '') {
+    res.status(400).json({ error: 'Invalid task title.' });
+  } else if (is_completed != null && typeof is_completed !== 'boolean') {
+    res.status(400).json({ error: 'Invalid task completion status.' });
+  } else {
+    next();
+  }
+};
 
 // Set up PostgreSQL connection pool
 const pool = new Pool({
@@ -15,6 +33,9 @@ const pool = new Pool({
   database: process.env.DB_NAME,
 });
 
+// Use the middleware for all routes
+router.use(logRequestDetails);
+
 router.get('/', async (req: Request, res: Response) => {
   try {
     const result = await pool.query('SELECT * FROM tasks');
@@ -25,7 +46,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', validateTaskData, async (req: Request, res: Response) => {
   const { title, is_completed } = req.body;
   try {
     const result = await pool.query(
@@ -34,11 +55,12 @@ router.post('/', async (req: Request, res: Response) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
+    console.log(error);
     res.status(500).json({ error: 'Failed to add task.' });
   }
 });
 
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', validateTaskData, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { title, is_completed } = req.body;
   try {
@@ -48,8 +70,9 @@ router.put('/:id', async (req: Request, res: Response) => {
     );
     if (result.rowCount === 0) {
       res.status(404).json({ error: 'Task not found.' });
+    } else {
+      res.json(result.rows[0]);
     }
-    res.json(result.rows[0]);
   } catch (error) {
     console.log(error);
     res.status(500).json({ error: 'Failed to update task.' });
@@ -65,9 +88,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
     );
     if (result.rowCount === 0) {
       res.status(404).json({ error: 'Task not found.' });
+    } else {
+      res.status(204).send();
     }
-    res.status(204).send();
   } catch (error) {
+    console.log(error);
     res.status(500).json({ error: 'Failed to delete task.' });
   }
 });
